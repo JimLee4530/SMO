@@ -4,6 +4,14 @@ import matplotlib.pyplot as plt
 
 class SMO:
     def __init__(self, dataMatIn, classLabels, C, toler, Kernel=('lin', 0)):
+        '''
+        :param dataMatIn:
+        :param classLabels:
+        :param C: controls the relative weighting between the twin goals of making cost small
+        and of ensuring that most examples have functional margin at least 1
+        :param toler:  the convergence  tolerance parameter
+        :param Kernel: I will update the function later
+        '''
         self.X = np.array(dataMatIn)
         self.y = np.array(classLabels).T[:, np.newaxis]
         self.C = C
@@ -11,9 +19,15 @@ class SMO:
         self.m = np.shape(dataMatIn)[0]
         self.alphas = np.zeros((self.m, 1))
         self.b = 0.
-        self.eCache = np.zeros((self.m, 2))
+        self.eCache = np.zeros((self.m, 1))
 
     def clipAlpha(self, aj, H, L):
+        '''
+        :param aj:
+        :param H:
+        :param L:
+        :return: new aj between H and L
+        '''
         if aj > H:
             aj = H
         if L > aj:
@@ -21,15 +35,25 @@ class SMO:
         return aj
 
     def calcE(self, i):
+        '''
+        :param i:
+        :return:  a corresponding E value of ith data
+        '''
         gxi = np.dot((self.alphas * self.y).T, np.dot(self.X, self.X[i, :].T)) + self.b
         Ei = gxi - self.y[i]
         return Ei
 
     def selectJ(self, i, Ei):
+        '''
+        choose a second E value by compare others
+        :param i:
+        :param Ei:
+        :return: best second E value
+        '''
         maxK = -1
         maxDelta = 0
         Ej = 0
-        self.eCache[i] = [1, Ei]
+        self.eCache[i] = Ei
         for k in range(self.m):
             if k == i:
                 continue
@@ -42,13 +66,23 @@ class SMO:
         return maxK, Ej
 
     def updataE(self, k):
+        '''
+        update new E value after change the alpha
+        :param k:
+        :return:
+        '''
         Ek = self.calcE(k)
-        self.eCache[k] = [1, Ek]
+        self.eCache[k] = Ek
 
     def innerLoop(self, i):
+        '''
+        inner loop in data, we update alphas value each iter
+        :param i:
+        :return:
+        '''
         Ei = self.calcE(i)
         if ((self.y[i] * Ei < -self.tol) and (self.alphas[i] < self.C)) or \
-                ((self.y[i] * Ei > -self.tol) and (self.alphas[i] > self.C)):
+                ((self.y[i] * Ei > self.tol) and (self.alphas[i] > self.C)):
             j, Ej = self.selectJ(i, Ei)
             alphaIold = self.alphas[i].copy()
             alphaJold = self.alphas[j].copy()
@@ -91,12 +125,17 @@ class SMO:
             return 0
 
     def train(self, maxIter):
+        '''
+        train function
+        :param maxIter:
+        :return: b and alphas
+        '''
         iter = 0
         entireSet = True
         alphaPairsChanged = 0
         for i in range(self.m):
             Ei = self.calcE(i)
-            self.eCache[i] = [1, Ei]
+            self.eCache[i] = Ei
         while (iter < maxIter) and ((alphaPairsChanged > 0) or (entireSet)):
             alphaPairsChanged = 0
             for i in range(self.m):
@@ -111,7 +150,7 @@ class SMO:
         return w
 
 if __name__ == '__main__':
-    dataArr, labelArr = readData.loadDataSet('data/dataSet.txt')
+    dataArr, labelArr = readData.loadDataSet('data/testSet.txt')
     smo = SMO(dataArr, labelArr, 0.6, 0.001)
     b, alphas = smo.train(40)
     w = smo.calcWs()
