@@ -3,7 +3,7 @@ import readData
 import matplotlib.pyplot as plt
 
 class SMO:
-    def __init__(self, dataMatIn, classLabels, C, toler, Kernel=('lin', 0)):
+    def __init__(self, dataMatIn, classLabels, C, toler, Kernel='linear', sigma=0.):
         '''
         :param dataMatIn:
         :param classLabels:
@@ -20,6 +20,21 @@ class SMO:
         self.alphas = np.zeros((self.m, 1))
         self.b = 0.
         self.eCache = np.zeros((self.m, 1))
+        self.K = np.zeros((self.m, self.m))
+        for i in range(self.m):
+            self.K[:, i] = self.kernel(self.X, self.X[i, :], Kernel, sigma)
+
+    def kernel(self, X, Z, Kernel, sigma):
+        m, n = np.shape(X)
+        k = np.zeros((m, 1))
+        if Kernel == 'linear':
+            k = np.dot(X, Z.T)
+        elif Kernel == 'rbf':
+            delta = X - Z
+            k = np.exp(-np.sum(delta**2, axis=1) / (sigma ** 2))
+        else:
+            raise NameError("we don't have this kernel\n")
+        return k
 
     def clipAlpha(self, aj, H, L):
         '''
@@ -39,7 +54,7 @@ class SMO:
         :param i:
         :return:  a corresponding E value of ith data
         '''
-        gxi = np.dot((self.alphas * self.y).T, np.dot(self.X, self.X[i, :].T)) + self.b
+        gxi = np.dot((self.alphas * self.y).T, self.K[:, i]) + self.b
         Ei = gxi - self.y[i]
         return Ei
 
@@ -95,8 +110,8 @@ class SMO:
             if (L == H):
                 print("L == H")
                 return 0
-            eta = np.dot(self.X[i, :], self.X[i, :].T) + np.dot(self.X[j, :], self.X[j, :].T) - 2 * np.dot(self.X[i, :],
-                                                                                                           self.X[j, :].T)
+            eta = self.K[i, i] + self.K[j, j] - 2 * self.K[i, j]
+
             if eta <= 0:
                 print("eta <= 0")
                 return 0
@@ -110,10 +125,10 @@ class SMO:
             alphaInew = alphaIold + self.y[i] * self.y[j] * (alphaJold - alphaJnew)
             self.alphas[i] = alphaInew
             self.updataE(i)
-            bi = self.b - Ei - self.y[i] * np.dot(self.X[i, :], self.X[i, :].T) * (alphaInew - alphaIold) - \
-                 self.y[j] * np.dot(self.X[i, :], self.X[j, :].T) * (alphaJnew - alphaJold)
-            bj = self.b - Ej - self.y[i] * np.dot(self.X[i, :], self.X[j, :].T) * (alphaInew - alphaIold) - \
-                 self.y[j] * np.dot(self.X[j, :], self.X[j, :].T) * (alphaJnew - alphaJold)
+            bi = self.b - Ei - self.y[i] * self.K[i, i] * (alphaInew - alphaIold) - \
+                 self.y[j] * self.K[i, j]* (alphaJnew - alphaJold)
+            bj = self.b - Ej - self.y[i] * self.K[i, j] * (alphaInew - alphaIold) - \
+                 self.y[j] * self.K[j, j] * (alphaJnew - alphaJold)
             if (0 < alphaInew) and (alphaInew < self.C):
                 self.b = bi
             elif (0 < alphaJnew) and (alphaJnew < self.C):
@@ -144,26 +159,62 @@ class SMO:
             iter += 1
         return self.b, self.alphas
 
-    def calcWs(self):
+    def calcLinearWs(self):
         w = np.sum(self.alphas * self.y * self.X, axis=0).transpose()
         # print(w.shape)
         return w
 
-if __name__ == '__main__':
+def testLinear():
     dataArr, labelArr = readData.loadDataSet('data/testSet.txt')
-    smo = SMO(dataArr, labelArr, 0.6, 0.001)
+    smo = SMO(dataArr, labelArr, 0.6, 0.001, 'linear')
     b, alphas = smo.train(40)
-    w = smo.calcWs()
+    w = smo.calcLinearWs()
 
     X = np.array(dataArr)
     y = np.array(labelArr).T
     X_pos = X[y > 0]
     X_neg = X[y < 0]
-    x = np.linspace(-10, 15, 100)
+    x = np.linspace(-7, 12, 100)
 
     plt.figure()
     plt.scatter(X_pos[:, 0], X_pos[:, 1], c='r')
     plt.scatter(X_neg[:, 1], X_neg[:, 1], c='g')
     print(w[0], w[1], )
-    plt.plot(x[:], (w[0] * x[:] + b)/-w[1])
+    plt.plot(x[:], (w[0] * x[:] + b) / -w[1])
     plt.show()
+
+def testRBF():
+    dataArr, labelArr = readData.loadDataSet('data/testSetRBF.txt')
+    smo = SMO(dataArr, labelArr, 200, 0.0001, 'rbf', 1.3)
+    b, alphas = smo.train(100)
+    X = np.array(dataArr)
+    y = np.array(labelArr).T[:, np.newaxis]
+    svInd = np.nonzero(alphas > 0)[0]
+    sVs = X[svInd]
+    labelSV = y[svInd]
+    print("there are %d Support Vectors" % np.shape(sVs)[0])
+    m, n = np.shape(X)
+    errorCount = 0
+    # print(labelSV.shape, alphas.shape, len(b))
+    for i in range(m):
+        kernelEval = smo.kernel(sVs, X[i, :], 'rbf', 1.3)
+        # print(np.shape(labelSV.T))
+        predict = np.dot(kernelEval, labelSV * alphas[svInd]) + b
+        if np.sign(predict) != np.sign(y[i]):
+            errorCount += 1
+    print("the training error rate is: %f" %(np.float(errorCount)/ m))
+    dataArr, labelArr = readData.loadDataSet('data/testSetRBF2.txt')
+    errorCount = 0
+    X = np.array(dataArr)
+    y = np.array(labelArr).T
+    m, n = np.shape(X)
+    for i in range(m):
+        kernelEval = smo.kernel(sVs, X[i, :], 'rbf', 1.3)
+        predict = np.dot(kernelEval.T, labelSV * alphas[svInd]) + b
+        if np.sign(predict) != np.sign(y[i]):
+            errorCount += 1
+    print("the test error rate is: %f" % (np.float(errorCount) / m))
+
+if __name__ == '__main__':
+    # testLinear()
+    testRBF()

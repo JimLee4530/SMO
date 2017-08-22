@@ -1,4 +1,4 @@
-# SMO
+# SMO 
 ## NOTE
 - update 2017-08-21: create basic function in SMO, I will upate kernel function later.
 
